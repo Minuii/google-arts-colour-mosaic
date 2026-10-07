@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Art Mosaic</title>
+<style>
+  body{font:15px system-ui;margin:0;background:#111;color:#eee;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px}
+  .bar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:center}
+  label{display:flex;gap:6px;align-items:center}
+  #view{width:100%;height:78vh;overflow:hidden;background:#222;cursor:grab;touch-action:none}
+  #view.drag{cursor:grabbing}
+  canvas{transform-origin:0 0;display:block}
+  #lens{position:fixed;width:220px;height:220px;border-radius:50%;border:3px solid #fff;box-shadow:0 4px 20px #000;pointer-events:none;display:none;background:#222;z-index:9}
+  button{padding:6px 14px}
+</style>
+<h2 style="margin:0">Upload an image → get an art mosaic</h2>
+<div class="bar">
+  <input type="file" id="file" accept="image/*">
+  <label>Tiles across <input type="range" id="cols" min="20" max="160" value="80"><b id="colsV">80</b></label>
+  <label>Variety <input type="range" id="var" min="0" max="100" value="30"></label>
+  <label>Original blend <input type="range" id="blend" min="0" max="60" value="15"></label>
+  <label>Magnifier <input type="range" id="mag" min="0" max="12" value="6"><b id="magV">6×</b></label>
+  <button id="dl" disabled>Download PNG</button>
+</div>
+<div id="msg">Hover to magnify, scroll to zoom, drag to pan, double-click to reset.</div>
+<div id="view"><canvas id="out" width="1" height="1"></canvas></div>
+<canvas id="lens" width="220" height="220"></canvas>
+<script src="atlas.js"></script>
+<script>
+const $ = id => document.getElementById(id), out = $('out'), ctx = out.getContext('2d');
+let src = null, atlas = new Image();
+atlas.src = ATLAS;
+
+function render() {
+  if (!src || !atlas.complete) return;
+  const cols = +$('cols').value, rows = Math.max(1, Math.round(cols * src.height / src.width));
+  // average colour per cell = downscale to cols x rows
+  const s = document.createElement('canvas'); s.width = cols; s.height = rows;
+  const sc = s.getContext('2d'); sc.imageSmoothingQuality = 'high'; sc.drawImage(src, 0, 0, cols, rows);
+  const px = sc.getImageData(0, 0, cols, rows).data;
+  const uses = new Float32Array(TILES.length), pen = +$('var').value * 40; // variety = penalty per reuse
+  out.width = cols * T; out.height = rows * T;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const i = (y * cols + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
+    let best = 0, bd = 1e12;
+    for (let k = 0; k < TILES.length; k++) {
+      const t = TILES[k], dr = t[0] - r, dg = t[1] - g, db = t[2] - b;
+      const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db + uses[k] * pen; // ponytail: weighted RGB, not Lab
+      if (d < bd) { bd = d; best = k; }
+    }
+    uses[best]++;
+    ctx.drawImage(atlas, (best % COLS) * T, Math.floor(best / COLS) * T, T, T, x * T, y * T, T, T);
+  }
+  const bl = +$('blend').value / 100;
+  if (bl) { ctx.globalAlpha = bl; ctx.drawImage(src, 0, 0, out.width, out.height); ctx.globalAlpha = 1; }
+  $('msg').textContent = `${cols}×${rows} tiles, ${new Set([...uses.keys()].filter(k => uses[k])).size} distinct artworks of ${TILES.length}, ${out.width}×${out.height}px · hover = magnify, scroll = zoom, drag = pan, double-click = reset`;
+  $('dl').disabled = false;
+  if (out.width !== lastW || out.height !== lastH) { lastW = out.width; lastH = out.height; fit(); }
+}
+
+// zoom (wheel, toward cursor) + pan (drag)
+const view = $('view'); let sc = 1, tx = 0, ty = 0, lastW = 0, lastH = 0;
+const apply = () => out.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`;
+function fit() { sc = Math.min(view.clientWidth / out.width, view.clientHeight / out.height); tx = (view.clientWidth - out.width * sc) / 2; ty = (view.clientHeight - out.height * sc) / 2; apply(); }
+view.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = view.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const ns = Math.min(8, Math.max(0.05, sc * Math.exp(-e.deltaY * 0.0015)));
+  tx = mx - (mx - tx) * ns / sc; ty = my - (my - ty) * ns / sc; sc = ns; apply();
+}, { passive: false });
+let drag = null;
+view.onpointerdown = e => { drag = [e.clientX - tx, e.clientY - ty]; view.setPointerCapture(e.pointerId); view.classList.add('drag'); };
+view.onpointermove = e => { if (drag) { tx = e.clientX - drag[0]; ty = e.clientY - drag[1]; apply(); } };
+view.onpointerup = () => { drag = null; view.classList.remove('drag'); };
+view.ondblclick = fit;
+addEventListener('resize', fit);
+
+// hover magnifier: lens shows the mosaic at (slider × current zoom) around the cursor
+const lens = $('lens'), lc = lens.getContext('2d');
+function showLens(e) {
+  const m = +$('mag').value;
+  if (!m || drag || out.width < 2) { lens.style.display = 'none'; return; }
+  const r = view.getBoundingClientRect(), side = 220 / (sc * m);
+  const cx = (e.clientX - r.left - tx) / sc, cy = (e.clientY - r.top - ty) / sc;
+  lc.fillStyle = '#222'; lc.fillRect(0, 0, 220, 220);
+  lc.drawImage(out, cx - side / 2, cy - side / 2, side, side, 0, 0, 220, 220);
+  lens.style.left = e.clientX - 110 + 'px'; lens.style.top = e.clientY - 110 + 'px'; lens.style.display = 'block';
+}
+view.addEventListener('pointermove', showLens);
+view.addEventListener('wheel', showLens, { passive: true }); // after the zoom handler, so sc is current
+view.addEventListener('pointerleave', () => lens.style.display = 'none');
+view.addEventListener('pointerdown', () => lens.style.display = 'none');
+$('mag').oninput = () => $('magV').textContent = $('mag').value === '0' ? 'off' : $('mag').value + '×';
+
+let timer;
+const later = () => { clearTimeout(timer); timer = setTimeout(render, 150); };
+$('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const im = new Image(); im.onload = () => { src = im; render(); }; im.src = URL.createObjectURL(f);
+};
+$('cols').oninput = () => { $('colsV').textContent = $('cols').value; later(); };
+$('var').oninput = $('blend').oninput = later;
+atlas.onload = render;
+$('dl').onclick = () => { const a = document.createElement('a'); a.download = 'mosaic.png'; a.href = out.toDataURL('image/png'); a.click(); };
+</script>
