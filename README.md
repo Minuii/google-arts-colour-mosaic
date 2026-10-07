@@ -1,6 +1,6 @@
 # Google Arts & Culture Color Dataset & Mosaic Generator
 
-A toolkit that scrapes artworks grouped by color from Google Arts & Culture, organizes them into labeled color datasets with numeric values, and packages them into a browser-based photomosaic generator that runs entirely offline.
+(DISCLAIMER!!!!!! SOME OF THE PAINTINGS ARE NO IN PUBLIC DOMAIN.)A toolkit that scrapes artworks grouped by color from Google Arts & Culture, organizes them into labeled colour datasets with numeric values, and packages them into a browser-based photomosaic generator that runs entirely offline.
 
 ![Sample mosaic output](mosaic/sample_output.png)
 
