@@ -1,6 +1,6 @@
 # Art Colour Dataset + Mosaic — Plan
 
-Project: `C:\Users\abdel\.gemini\antigravity\scratch\color_scraper` (full history in [progress.md](progress.md))
+(full history in [progress.md](progress.md))
 
 ## Goal
 1. Build one dataset per colour from `artsandculture.google.com/color`, each colour with its own numeric value, for ML training.
